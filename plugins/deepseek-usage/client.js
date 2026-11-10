@@ -253,22 +253,48 @@ window.__ModuleLoader__.load({
       background: C.interactiveHover
     };
 
-    const PANEL_STYLE = {
+    const POPOVER_GAP = 8;
+    const POPOVER_MARGIN = 8;
+    const POPOVER_WIDTH = 460;
+    const POPOVER_MAX_HEIGHT_RATIO = 0.72;
+
+    /* The popover lives in the frame-wide shell.overlay layer: fixed inside the
+     * overlay entry, never in the composer/dock layout flow. */
+    const POPOVER_FRAME_STYLE = {
       boxSizing: 'border-box',
+      position: 'fixed',
+      zIndex: 1,
       display: 'flex',
       flexDirection: 'column',
-      gap: '6px',
-      minWidth: '280px',
-      maxWidth: 'min(460px, 92vw)',
-      marginTop: '6px',
-      padding: '10px 12px',
-      border: '0.5px solid ' + C.borderL1,
+      border: '0.5px solid ' + C.borderL2,
       borderRadius: C.radiusMd,
       background: C.panelBg,
       color: C.labelPrimary,
       fontFamily: C.font,
       fontSize: '12px',
-      lineHeight: '18px'
+      lineHeight: '18px',
+      boxShadow: 'var(--dsw-elevation-panel)',
+      overflow: 'hidden',
+      pointerEvents: 'auto'
+    };
+
+    const POPOVER_SCROLL_STYLE = {
+      boxSizing: 'border-box',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px',
+      minHeight: 0,
+      padding: '10px 12px',
+      overflowY: 'auto',
+      overscrollBehavior: 'contain'
+    };
+
+    const POPOVER_BACKDROP_STYLE = {
+      position: 'fixed',
+      inset: 0,
+      zIndex: 0,
+      background: 'transparent',
+      pointerEvents: 'auto'
     };
 
     const SECTION_STYLE = {
@@ -1015,6 +1041,7 @@ window.__ModuleLoader__.load({
       if (props.ariaLabel !== undefined) buttonProps['aria-label'] = props.ariaLabel;
       if (props.ariaExpanded !== undefined) buttonProps['aria-expanded'] = props.ariaExpanded;
       if (props.ariaControls !== undefined) buttonProps['aria-controls'] = props.ariaControls;
+      if (props.elementRef !== undefined) buttonProps.ref = props.elementRef;
       return h('button', buttonProps, props.children);
     }
 
@@ -1205,7 +1232,7 @@ window.__ModuleLoader__.load({
     }
 
     /* ======================================================================
-     * Dock badge (compact pill + inline expanded panel)
+     * Dock badge (compact pill; its detail surface is the shell.overlay popover)
      * ==================================================================== */
 
     function dockBalanceText(data, status, t) {
@@ -1360,7 +1387,12 @@ window.__ModuleLoader__.load({
       children.push(h('div', { key: 'footer-footnote', style: HINT_STYLE }, t('localEstimate')));
     }
 
-    function renderDockPanel(options) {
+    /**
+     * Content children of the dock detail surface. The container is owned by
+     * the shell.overlay popover, so this renderer returns a plain children array
+     * and never affects the composer/dock layout flow.
+     */
+    function renderDockPanelChildren(options) {
       const data = options.data;
       const children = [];
       if (data === null || data === undefined) {
@@ -1389,12 +1421,7 @@ window.__ModuleLoader__.load({
         renderDockPricingSection(data, options.peakInfo, options.t, children);
         renderDockFooter(data, options.t, options.refreshing, options.onRefresh, children);
       }
-      return h('div', {
-        id: options.panelId,
-        role: 'region',
-        'aria-label': options.t('title'),
-        style: PANEL_STYLE
-      }, children);
+      return children;
     }
 
     /* ======================================================================
@@ -1576,17 +1603,160 @@ window.__ModuleLoader__.load({
      * Component factories (bound to t + locale for the registration lifetime)
      * ==================================================================== */
 
-    function createComponents(ctx, t, locale) {
+    /* ======================================================================
+     * Dock popover store (shared by DockBadge and the shell.overlay entry)
+     * ==================================================================== */
+
+    function createPopoverStore() {
+      let open = false;
+      let anchorElement = null;
+      let rect = null;
+      let sessionId = null;
+      let panelId = '';
+      let revision = 0;
+      let snapshot = { open: false, anchorEl: null, rect: null, sessionId: null, panelId: '', revision: 0 };
+      const listeners = new Set();
+
+      function publish() {
+        revision += 1;
+        snapshot = {
+          open: open,
+          anchorEl: anchorElement,
+          rect: rect,
+          sessionId: sessionId,
+          panelId: panelId,
+          revision: revision
+        };
+        listeners.forEach(function (listener) {
+          try {
+            listener();
+          } catch (error) {
+            /* a broken subscriber must not break the store */
+          }
+        });
+      }
+
+      function measure() {
+        if (anchorElement !== null && typeof anchorElement.getBoundingClientRect === 'function') {
+          const box = anchorElement.getBoundingClientRect();
+          rect = {
+            top: box.top,
+            bottom: box.bottom,
+            left: box.left,
+            right: box.right,
+            width: box.width,
+            height: box.height
+          };
+        } else {
+          rect = null;
+        }
+      }
+
+      function openPopover(next) {
+        open = true;
+        anchorElement = next !== null && next !== undefined && next.anchorEl !== undefined ? next.anchorEl : null;
+        sessionId = next !== null && next !== undefined && typeof next.sessionId === 'string' ? next.sessionId : null;
+        panelId = next !== null && next !== undefined && typeof next.panelId === 'string' ? next.panelId : '';
+        measure();
+        publish();
+      }
+
+      function closePopover() {
+        if (!open) return;
+        open = false;
+        anchorElement = null;
+        rect = null;
+        sessionId = null;
+        publish();
+      }
+
+      return {
+        getSnapshot: function () { return snapshot; },
+        isOpen: function () { return open; },
+        getPanelId: function () { return panelId; },
+        getSessionId: function () { return sessionId; },
+        getRect: function () { return rect; },
+        getAnchor: function () { return anchorElement; },
+        subscribe: function (listener) {
+          listeners.add(listener);
+          return function () { listeners.delete(listener); };
+        },
+        open: openPopover,
+        toggle: function (next) {
+          if (open) closePopover();
+          else openPopover(next);
+        },
+        close: closePopover,
+        updateRect: function () {
+          if (!open) return;
+          const previous = rect;
+          measure();
+          if (previous === null || rect === null || previous.top !== rect.top || previous.left !== rect.left || previous.bottom !== rect.bottom) {
+            publish();
+          }
+        }
+      };
+    }
+
+    function clampValue(value, minimum, maximum) {
+      if (maximum < minimum) return minimum;
+      return Math.min(Math.max(value, minimum), maximum);
+    }
+
+    function viewportSize() {
+      const width = typeof window !== 'undefined' && isFiniteNumber(window.innerWidth) && window.innerWidth > 0 ? window.innerWidth : 1024;
+      const height = typeof window !== 'undefined' && isFiniteNumber(window.innerHeight) && window.innerHeight > 0 ? window.innerHeight : 768;
+      return { width: width, height: height };
+    }
+
+    /** Fixed-position geometry: above the pill when it fits, else below, clamped to the viewport. */
+    function computePopoverLayout(rect) {
+      const viewport = viewportSize();
+      const width = Math.min(POPOVER_WIDTH, Math.max(220, viewport.width - POPOVER_MARGIN * 2));
+      const anchorTop = rect !== null && rect !== undefined && isFiniteNumber(rect.top) ? rect.top : viewport.height - 56;
+      const anchorBottom = rect !== null && rect !== undefined && isFiniteNumber(rect.bottom) ? rect.bottom : viewport.height - 28;
+      const anchorLeft = rect !== null && rect !== undefined && isFiniteNumber(rect.left) ? rect.left : (viewport.width - width) / 2;
+      const spaceAbove = Math.max(0, anchorTop - POPOVER_GAP - POPOVER_MARGIN);
+      const spaceBelow = Math.max(0, viewport.height - anchorBottom - POPOVER_GAP - POPOVER_MARGIN);
+      const placeAbove = spaceAbove >= 240 || spaceAbove >= spaceBelow;
+      const available = Math.max(120, placeAbove ? spaceAbove : spaceBelow);
+      const maxHeight = Math.max(120, Math.min(available, Math.round(viewport.height * POPOVER_MAX_HEIGHT_RATIO)));
+      const left = clampValue(anchorLeft, POPOVER_MARGIN, Math.max(POPOVER_MARGIN, viewport.width - width - POPOVER_MARGIN));
+      const layout = { width: Math.round(width) + 'px', left: Math.round(left) + 'px', maxHeight: Math.round(maxHeight) + 'px' };
+      if (placeAbove) layout.bottom = Math.round(viewport.height - anchorTop + POPOVER_GAP) + 'px';
+      else layout.top = Math.round(anchorBottom + POPOVER_GAP) + 'px';
+      return layout;
+    }
+
+    function createComponents(ctx, t, locale, store) {
       function DockBadge(props) {
         useLocaleRevision(locale);
         const sessionId = props !== null && props !== undefined && typeof props.sessionId === 'string' ? props.sessionId : null;
         const remote = useRemoteState(ctx, sessionId);
         const now = useTicker();
-        const [expanded, setExpanded] = React.useState(false);
+        const open = React.useSyncExternalStore(store.subscribe, store.isOpen);
+        const buttonRef = React.useRef(null);
         const panelIdRef = React.useRef(null);
         if (panelIdRef.current === null) {
-          panelIdRef.current = 'deepseek-usage-dock-' + Math.random().toString(36).slice(2);
+          panelIdRef.current = 'deepseek-usage-popover-' + Math.random().toString(36).slice(2);
         }
+        const previousOpenRef = React.useRef(open);
+        React.useEffect(function () {
+          if (previousOpenRef.current && !open) {
+            const button = buttonRef.current;
+            if (button !== null && button !== undefined && typeof button.focus === 'function') {
+              try {
+                button.focus({ preventScroll: true });
+              } catch (error) {
+                button.focus();
+              }
+            }
+          }
+          previousOpenRef.current = open;
+        }, [open]);
+        React.useEffect(function () {
+          return function () { store.close(); };
+        }, [sessionId]);
         const state = remote.state;
         const data = state.data;
         const serverNow = now + state.serverOffset;
@@ -1650,17 +1820,118 @@ window.__ModuleLoader__.load({
         },
           h(ActionButton, {
             key: 'pill',
+            elementRef: buttonRef,
             baseStyle: PILL_STYLE,
             hoverStyle: PILL_HOVER_STYLE,
-            active: expanded,
-            onClick: function () { setExpanded(!expanded); },
+            active: open,
+            onClick: function () {
+              store.toggle({
+                anchorEl: buttonRef.current,
+                sessionId: sessionId,
+                panelId: panelIdRef.current
+              });
+            },
             title: summaryText + (peakInfo !== null && peakInfo.countdownMs !== null ? ' · ' + countdownTitle : ''),
             ariaLabel: summaryText,
-            ariaExpanded: expanded,
+            ariaExpanded: open,
             ariaControls: panelIdRef.current
-          }, children),
-          expanded ? renderDockPanel({
-            panelId: panelIdRef.current,
+          }, children));
+      }
+
+      /**
+       * Registered always in shell.overlay. It renders nothing while the popover
+       * is closed, so PopoverContent (and its data hook) is never mounted and
+       * never fetches until the user opens the detail surface.
+       */
+      function OverlayEntry() {
+        React.useSyncExternalStore(store.subscribe, function () {
+          return store.getSnapshot().revision;
+        });
+        if (!store.isOpen()) return null;
+        return h(PopoverContent, {
+          key: 'dock-popover',
+          panelId: store.getPanelId(),
+          sessionId: store.getSessionId(),
+          store: store
+        });
+      }
+
+      function PopoverContent(props) {
+        useLocaleRevision(locale);
+        const panelRef = React.useRef(null);
+        const remote = useRemoteState(ctx, props.sessionId);
+        const now = useTicker();
+        const state = remote.state;
+        const data = state.data;
+        const serverNow = now + state.serverOffset;
+        const peakInfo = computePeakInfo(data !== null && data !== undefined ? data.schedule : null, serverNow);
+        const layout = computePopoverLayout(props.store !== null && props.store !== undefined ? props.store.getRect() : null);
+        const openStore = props.store;
+
+        React.useEffect(function () {
+          const node = panelRef.current;
+          if (node !== null && node !== undefined && typeof node.focus === 'function') {
+            try {
+              node.focus({ preventScroll: true });
+            } catch (error) {
+              node.focus();
+            }
+          }
+        }, []);
+
+        React.useEffect(function () {
+          function onKeyDown(event) {
+            if (event !== null && event !== undefined && (event.key === 'Escape' || event.key === 'Esc')) {
+              openStore.close();
+            }
+          }
+          function onViewportChange() {
+            openStore.updateRect();
+          }
+          if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+            document.addEventListener('keydown', onKeyDown, true);
+          }
+          if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            window.addEventListener('resize', onViewportChange);
+            window.addEventListener('scroll', onViewportChange, true);
+          }
+          return function () {
+            if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+              document.removeEventListener('keydown', onKeyDown, true);
+            }
+            if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+              window.removeEventListener('resize', onViewportChange);
+              window.removeEventListener('scroll', onViewportChange, true);
+            }
+          };
+        }, [openStore]);
+
+        return h('div', {
+          style: {
+            position: 'fixed',
+            inset: 0,
+            zIndex: 0,
+            pointerEvents: 'none'
+          }
+        },
+          h('div', {
+            key: 'backdrop',
+            'data-dsh-deepseek-usage-backdrop': true,
+            'aria-hidden': true,
+            onClick: function () { openStore.close(); },
+            style: POPOVER_BACKDROP_STYLE
+          }),
+          h('div', {
+            key: 'frame',
+            'data-dsh-deepseek-usage-popover': true,
+            ref: panelRef,
+            id: props.panelId,
+            role: 'dialog',
+            'aria-modal': 'false',
+            'aria-label': t('title'),
+            tabIndex: -1,
+            style: Object.assign({}, POPOVER_FRAME_STYLE, layout)
+          }, h('div', { style: POPOVER_SCROLL_STYLE }, renderDockPanelChildren({
             data: data,
             status: state.status,
             error: state.error,
@@ -1669,9 +1940,9 @@ window.__ModuleLoader__.load({
             onRefresh: remote.refresh,
             serverNow: serverNow,
             peakInfo: peakInfo,
-            sessionId: sessionId,
+            sessionId: props.sessionId,
             t: t
-          }) : null);
+          }))));
       }
 
       function SettingsPage() {
@@ -1746,7 +2017,7 @@ window.__ModuleLoader__.load({
           }, t('localEstimate') + ' · ' + t('costNote') + ' ' + t('officialBalance') + ' ' + t('settingsHint')));
       }
 
-      return { DockBadge: DockBadge, SettingsPage: SettingsPage };
+      return { DockBadge: DockBadge, SettingsPage: SettingsPage, OverlayEntry: OverlayEntry };
     }
 
     /* ======================================================================
@@ -1762,7 +2033,8 @@ window.__ModuleLoader__.load({
           return ctx.locale.register(NS, { zh: DICT_ZH, en: DICT_EN });
         }, 'deepseek-usage: locale dictionaries');
 
-        const components = createComponents(ctx, t, ctx.locale);
+        const popoverStore = createPopoverStore();
+        const components = createComponents(ctx, t, ctx.locale, popoverStore);
 
         ctx.slots.inject('conversation.composer.dock', function () {
           return ctx.slots.register({
@@ -1770,6 +2042,14 @@ window.__ModuleLoader__.load({
             id: 'deepseek-usage',
             order: 2
           }, components.DockBadge);
+        });
+
+        ctx.slots.inject('shell.overlay', function () {
+          return ctx.slots.register({
+            name: 'shell.overlay',
+            id: 'deepseek-usage-dock-popover',
+            order: 20
+          }, components.OverlayEntry);
         });
 
         ctx.slots.inject('settings.section', function () {

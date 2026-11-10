@@ -53,3 +53,7 @@ plugins/<name>/
   本地工作草稿，不随仓库分发）。
 - 安装后用 `cordis_inspect_query` 确认插件行、Client 模块与 Slot 注册；页面刷新后检查控制台无
   `slot entry crashed`，并在浅色/深色主题、中文/英文下检查显示。
+
+## License
+
+[MIT](LICENSE) © 2026 Ledu Wang. 各插件包在 `package.json` 中声明同一许可证；如需用于商业项目，请保留版权与许可声明。

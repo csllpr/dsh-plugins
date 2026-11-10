@@ -35,5 +35,6 @@
     "type": "git",
     "url": "git+https://github.com/csllpr/dsh-plugins.git",
     "directory": "plugins/deepseek-usage"
-  }
+  },
+  "license": "MIT"
 }

@@ -1,14 +1,55 @@
-# Internal agent-team working notes (research, contracts, verification, dev harnesses).
-# Kept out of the public repository; plugin sources live under plugins/.
+# ── DSH plugin workspace ─────────────────────────────────────────────────────
+# Internal agent-team working notes (research, contracts, verification reports,
+# local dev harnesses). They contain machine-specific paths and live test data,
+# so they stay local; shipped plugin sources live under plugins/.
 .team/
 
-# Node / package manager
-node_modules/
-pnpm-lock.yaml
-*.log
+# ── Secrets: never commit credentials, keys, or environment files ────────────
+# DSH credential stores and commonly copied secret files.
+.credentials.yaml
+**/.credentials.yaml
+.dsh/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+.ssh/
+.npmrc
 
-# Editor / OS
+# ── Node / package manager ───────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-error.log*
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.cache/
+.turbo/
+*.tgz
+# Lockfiles are intentionally NOT ignored: once a plugin introduces build or
+# dev dependencies, its pnpm-lock.yaml must be committed for reproducibility.
+
+# ── Logs / temp / runtime state ──────────────────────────────────────────────
+*.log
+*.local
+*.tmp
+.tmp/
+
+# ── Editor / OS noise ────────────────────────────────────────────────────────
 .DS_Store
+.AppleDouble
+.LSOverride
 Thumbs.db
+Desktop.ini
+__MACOSX/
 .idea/
 .vscode/
+*.swp
+*~

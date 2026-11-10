@@ -30,5 +30,10 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csllpr/dsh-plugins.git",
+    "directory": "plugins/deepseek-usage"
   }
 }

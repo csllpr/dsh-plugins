@@ -49,7 +49,7 @@ plugins/<name>/
 
 - 语法检查：`node --check plugins/<name>/index.js`、`node --check plugins/<name>/client.js`；
   `node -e "JSON.parse(require('fs').readFileSync('plugins/<name>/package.json'))"`。
-- Host 半可在不安装的情况下用假 Cordis 上下文单测（开发辅助脚本与团队调研/验证笔记保留在
-  本地 `.team/`，属于工作草稿，不随仓库分发）。
+- Host 半可在不安装的情况下用假 Cordis 上下文单测（开发辅助脚本与调研/验证笔记属于
+  本地工作草稿，不随仓库分发）。
 - 安装后用 `cordis_inspect_query` 确认插件行、Client 模块与 Slot 注册；页面刷新后检查控制台无
   `slot entry crashed`，并在浅色/深色主题、中文/英文下检查显示。

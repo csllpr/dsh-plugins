@@ -1,0 +1,14 @@
+# Internal agent-team working notes (research, contracts, verification, dev harnesses).
+# Kept out of the public repository; plugin sources live under plugins/.
+.team/
+
+# Node / package manager
+node_modules/
+pnpm-lock.yaml
+*.log
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

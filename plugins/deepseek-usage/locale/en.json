@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepSeek usage and balance",
+    "description": "Shows the DeepSeek API balance, estimated token usage and cost, and whether the current time is peak or off-peak pricing."
+  }
+}

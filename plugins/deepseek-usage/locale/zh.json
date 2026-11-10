@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DeepSeek 用量与余额",
+    "description": "显示 DeepSeek API 余额、本会话与今日的 Token 用量及估算费用，并检测和显示当前处于峰时还是谷时计费时段。"
+  }
+}
